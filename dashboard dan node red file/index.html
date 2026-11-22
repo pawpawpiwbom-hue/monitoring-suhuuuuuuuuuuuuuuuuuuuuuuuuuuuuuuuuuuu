@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Monitoring Suhu IoT</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 25px;
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+
+        .temperature {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .normal {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .warning {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .connection {
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .connected {
+            color: #16a34a;
+        }
+
+        .disconnected {
+            color: #dc2626;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 350px;
+        }
+
+        .notification {
+            font-size: 17px;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        .footer {
+            text-align: center;
+            color: #64748b;
+            font-size: 13px;
+            margin-top: 25px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 12px;
+            }
+
+            .temperature {
+                font-size: 38px;
+            }
+
+            .card {
+                padding: 18px;
+            }
+
+            .chart-container {
+                height: 280px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Dashboard Monitoring Suhu IoT made by the cildren of limgrave</h1>
+
+    <!-- Kartu suhu -->
+    <div class="card">
+        <h2>Suhu Sekarang</h2>
+
+        <div id="temperature" class="temperature">
+            -- °C
+        </div>
+
+        <div>
+            Batas Suhu:
+            <span id="threshold">--</span> °C
+        </div>
+
+        <div id="status" class="status normal">
+            Menunggu data...
+        </div>
+
+        <div id="notification" class="notification">
+            Belum ada data suhu
+        </div>
+
+        <div id="connection" class="connection disconnected">
+            WebSocket: Menghubungkan...
+        </div>
+
+        <div style="margin-top:10px; font-size:13px; color:#64748b;">
+            Update terakhir:
+            <span id="lastUpdate">--</span>
+        </div>
+    </div>
+
+    <!-- Grafik -->
+    <div class="card">
+        <h2>Grafik Suhu Real-Time</h2>
+
+        <div class="chart-container">
+            <canvas id="temperatureChart"></canvas>
+        </div>
+    </div>
+
+    <div class="footer">
+        Monitoring Suhu IoT — Node-RED & WebSocket
+    </div>
+
+</div>
+
+<script>
+    // ==============================
+    // KONFIGURASI WEBSOCKET
+    // ==============================
+
+    const WS_URL = "ws://localhost:1880/ws/suhu";
+
+    const RECONNECT_DELAY = 3000;
+
+    let socket = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+
+    // ==============================
+    // ELEMEN HTML
+    // ==============================
+
+    const temperatureElement =
+        document.getElementById("temperature");
+
+    const thresholdElement =
+        document.getElementById("threshold");
+
+    const statusElement =
+        document.getElementById("status");
+
+    const notificationElement =
+        document.getElementById("notification");
+
+    const connectionElement =
+        document.getElementById("connection");
+
+    const lastUpdateElement =
+        document.getElementById("lastUpdate");
+
+    // ==============================
+    // GRAFIK CHART.JS
+    // ==============================
+
+    const ctx = document
+        .getElementById("temperatureChart")
+        .getContext("2d");
+
+    const temperatureChart = new Chart(ctx, {
+        type: "line",
+
+        data: {
+            labels: [],
+
+            datasets: [{
+                label: "Suhu (°C)",
+                data: [],
+
+                borderColor: "#3b82f6",
+                backgroundColor: "rgba(59,130,246,0.15)",
+
+                borderWidth: 2,
+                tension: 0.3,
+
+                fill: true,
+
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+
+            animation: false,
+
+            scales: {
+                y: {
+                    beginAtZero: false,
+
+                    title: {
+                        display: true,
+                        text: "Suhu (°C)"
+                    }
+                },
+
+                x: {
+                    title: {
+                        display: true,
+                        text: "Waktu"
+                    }
+                }
+            },
+
+            plugins: {
+                legend: {
+                    display: true
+                }
+            }
+        }
+    });
+
+    // ==============================
+    // UPDATE DASHBOARD
+    // ==============================
+
+    function updateDashboard(data) {
+
+        if (!data || typeof data !== "object") {
+            console.error("Format data tidak valid:", data);
+            return;
+        }
+
+        const temperature = Number(data.temperature);
+
+        if (!Number.isFinite(temperature)) {
+            console.error("Data suhu tidak valid:", data);
+            return;
+        }
+
+        const threshold =
+            Number(data.threshold ?? 35);
+
+        const alertStatus =
+            data.alert ?? (temperature > threshold);
+
+        const notification =
+            data.notification ??
+            (alertStatus
+                ? "PERINGATAN! Suhu melewati batas!"
+                : "Suhu normal");
+
+        // Tampilkan suhu
+        temperatureElement.textContent =
+            temperature + " °C";
+
+        // Tampilkan threshold
+        thresholdElement.textContent =
+            threshold + " °C";
+
+        // Tampilkan status
+        if (alertStatus) {
+
+            statusElement.textContent =
+                "SUHU TINGGI";
+
+            statusElement.className =
+                "status warning";
+
+            notificationElement.style.color =
+                "#dc2626";
+
+        } else {
+
+            statusElement.textContent =
+                "NORMAL";
+
+            statusElement.className =
+                "status normal";
+
+            notificationElement.style.color =
+                "#16a34a";
+        }
+
+        notificationElement.textContent =
+            notification;
+
+        // Waktu data diterima
+        const now = new Date();
+
+        lastUpdateElement.textContent =
+            now.toLocaleTimeString("id-ID");
+
+        // ==============================
+        // UPDATE GRAFIK
+        // ==============================
+
+        const timeLabel =
+            now.toLocaleTimeString("id-ID");
+
+        temperatureChart.data.labels.push(timeLabel);
+
+        temperatureChart.data.datasets[0].data.push(
+            temperature
+        );
+
+        // Maksimal 20 data pada grafik
+        if (temperatureChart.data.labels.length > 20) {
+
+            temperatureChart.data.labels.shift();
+
+            temperatureChart.data.datasets[0].data.shift();
+        }
+
+        temperatureChart.update("none");
+
+        console.log("Dashboard diperbarui:", data);
+    }
+
+    // ==============================
+    // WEBSOCKET RECONNECT OTOMATIS
+    // ==============================
+
+    function connectWebSocket() {
+
+        // Jangan buat koneksi ganda
+        if (
+            socket &&
+            (
+                socket.readyState === WebSocket.OPEN ||
+                socket.readyState === WebSocket.CONNECTING
+            )
+        ) {
+            return;
+        }
+
+        clearTimeout(reconnectTimer);
+
+        console.log("Menghubungkan WebSocket...");
+
+        connectionElement.textContent =
+            "WebSocket: Menghubungkan...";
+
+        connectionElement.className =
+            "connection disconnected";
+
+        try {
+
+            socket = new WebSocket(WS_URL);
+
+        } catch (error) {
+
+            console.error("Gagal membuat WebSocket:", error);
+
+            scheduleReconnect();
+
+            return;
+        }
+
+        // Saat terhubung
+        socket.onopen = function() {
+
+            reconnectAttempts = 0;
+
+            console.log("WebSocket berhasil terhubung");
+
+            connectionElement.textContent =
+                "WebSocket: Terhubung";
+
+            connectionElement.className =
+                "connection connected";
+
+            clearTimeout(reconnectTimer);
+        };
+
+        // Saat menerima data
+        socket.onmessage = function(event) {
+
+            console.log("Data diterima:", event.data);
+
+            try {
+
+                let data = event.data;
+
+                // Jika data berbentuk JSON string
+                if (typeof data === "string") {
+                    data = JSON.parse(data);
+                }
+
+                updateDashboard(data);
+
+            } catch (error) {
+
+                console.error(
+                    "Gagal membaca data WebSocket:",
+                    error
+                );
+            }
+        };
+
+        // Saat koneksi terputus
+        socket.onclose = function() {
+
+            console.warn("WebSocket terputus");
+
+            connectionElement.textContent =
+                "WebSocket: Terputus - mencoba kembali...";
+
+            connectionElement.className =
+                "connection disconnected";
+
+            scheduleReconnect();
+        };
+
+        // Saat terjadi error
+        socket.onerror = function(error) {
+
+            console.error("WebSocket error:", error);
+
+            connectionElement.textContent =
+                "WebSocket: Terjadi kesalahan";
+
+            connectionElement.className =
+                "connection disconnected";
+
+            // Browser akan memicu onclose
+            // setelah koneksi error
+        };
+    }
+
+    // ==============================
+    // JADWAL RECONNECT
+    // ==============================
+
+    function scheduleReconnect() {
+
+        // Hindari timer reconnect ganda
+        if (reconnectTimer) {
+            return;
+        }
+
+        reconnectAttempts++;
+
+        console.log(
+            "Mencoba reconnect dalam " +
+            (RECONNECT_DELAY / 1000) +
+            " detik. Percobaan ke-" +
+            reconnectAttempts
+        );
+
+        reconnectTimer = setTimeout(function() {
+
+            reconnectTimer = null;
+
+            connectWebSocket();
+
+        }, RECONNECT_DELAY);
+    }
+
+    // ==============================
+    // MULAI WEBSOCKET
+    // ==============================
+
+    connectWebSocket();
+
+</script>
+
+</body>
+</html>

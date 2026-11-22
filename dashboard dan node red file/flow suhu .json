@@ -1,0 +1,156 @@
+[
+    {
+        "id": "58ade53ed294511c",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "24e8ffcdf2298cee",
+        "type": "websocket out",
+        "z": "58ade53ed294511c",
+        "name": "websocket suhu",
+        "server": "4ca0efb096bab77a",
+        "client": "",
+        "x": 840,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "f3db779246cc2eb1",
+        "type": "inject",
+        "z": "58ade53ed294511c",
+        "name": "inject",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "11",
+        "payloadType": "num",
+        "x": 90,
+        "y": 280,
+        "wires": [
+            [
+                "3e4976ceb9e96825"
+            ]
+        ]
+    },
+    {
+        "id": "3e4976ceb9e96825",
+        "type": "function",
+        "z": "58ade53ed294511c",
+        "name": "format data suhu",
+        "func": "// Mengambil nilai suhu dari Inject\nlet temperature = Number(msg.payload);\n\n// Menentukan batas suhu\nlet threshold = 35;\n\n// Memeriksa apakah suhu melewati batas\nlet alert = temperature > threshold;\n\n// Membuat pesan notifikasi\nlet notification = alert\n    ? \"PERINGATAN! Suhu melewati batas!\"\n    : \"Suhu normal\";\n\n// Menyiapkan data untuk dashboard\nmsg.payload = {\n    temperature: temperature,\n    threshold: threshold,\n    alert: alert,\n    notification: notification\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 270,
+        "y": 280,
+        "wires": [
+            [
+                "24e8ffcdf2298cee",
+                "0b8c42a793790a14",
+                "5416a5a54b8d6be4"
+            ]
+        ]
+    },
+    {
+        "id": "0b8c42a793790a14",
+        "type": "debug",
+        "z": "58ade53ed294511c",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 500,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "5416a5a54b8d6be4",
+        "type": "function",
+        "z": "58ade53ed294511c",
+        "name": "Data SQLlite",
+        "func": "const temperature = Number(msg.payload.temperature);\n\nif (!Number.isFinite(temperature)) {\n    node.error(\"Data suhu tidak valid\", msg);\n    return null;\n}\n\nmsg.method = \"POST\";\nmsg.url = \"http://localhost:3000/api/temperature\";\n\nmsg.headers = {\n    \"Content-Type\": \"application/json\",\n    \"x-api-key\": \"iot-rahasia-123\"\n};\n\nmsg.payload = {\n    temperature: temperature\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 340,
+        "wires": [
+            [
+                "d751a4ee2e479eaa"
+            ]
+        ]
+    },
+    {
+        "id": "d751a4ee2e479eaa",
+        "type": "http request",
+        "z": "58ade53ed294511c",
+        "name": "",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://localhost:3000/api/temperature",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 730,
+        "y": 400,
+        "wires": [
+            [
+                "2ae1720793be6339"
+            ]
+        ]
+    },
+    {
+        "id": "2ae1720793be6339",
+        "type": "debug",
+        "z": "58ade53ed294511c",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 900,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "4ca0efb096bab77a",
+        "type": "websocket-listener",
+        "path": "/ws/suhu",
+        "wholemsg": "false"
+    }
+]
